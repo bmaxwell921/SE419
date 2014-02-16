@@ -1,0 +1,15 @@
+Write a Hadoop program to identify the 10 most frequently occurring bigrams in an 
+input text corpus, along with their frequencies of occurrence. You can assume that each 
+call to the Map method receives one line of the file as its input. Note that it is possible for 
+a bigram to span two lines of input; you can ignore such cases and you do not have to 
+count such bigrams. Also remove any punctuation marks such as “,”, “.”, “?”,"'" etc from the 
+input text (this can be done in the mapper), and convert all letters to lowercase.
+The same sentence!
+The same sentence!
+The same sentence!
+The same sentence!
+The same sentence!
+The same sentence!
+The same sentence!
+The same sentence!
+The same sentence!

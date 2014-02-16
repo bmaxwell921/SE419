@@ -1,0 +1,10 @@
+X	In:A
+A	Out:X
+Y	In:X
+X	Out:Y
+R	In:X
+X	Out:R
+Y	In:R
+R	Out:Y
+Z	In:Y
+Y	Out:Z
