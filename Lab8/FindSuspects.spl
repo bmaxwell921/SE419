@@ -1,0 +1,139 @@
+use spl.file::*;
+
+composite FindSuspects {
+	graph
+		stream<rstring timeStamp, rstring callerId, rstring calleeId, uint32 duration> towerX = FileSource() {
+			param
+				format : csv;
+				file : "/datasets/recordX.csv";
+				hasHeaderLine : false;
+		}
+		
+		stream<rstring timeStamp, rstring callerId, rstring calleeId, uint32 duration> towerY = FileSource() {
+			param
+				format : csv;
+				file : "/datasets/recordY.csv";
+				hasHeaderLine : false;
+		}
+		
+		stream<rstring timeStamp, rstring callerId, rstring calleeId, uint32 duration> bothTowers = Union(towerX; towerY) {}
+		
+		//A function to check whether any tuple falls into the 'A' problem category
+		stream <rstring callerId, rstring problem> checkA = Custom(bothTowers) {
+			logic state:
+				mutable map<rstring, uint32> callerCounts = {};
+
+			onTuple bothTowers : {
+				//When we get a callerId in, update the count in the map either by setting it to 1 for the first time we've seen it, or increasing the count  by one
+				if (!(bothTowers.callerId in callerCounts)){
+					insertM(callerCounts, bothTowers.callerId, 1u);
+				} else {
+					callerCounts[bothTowers.callerId] = callerCounts[bothTowers.callerId] + 1u;
+				}
+			}
+
+			onPunct bothTowers : {
+				for (rstring key in callerCounts) {
+					if (callerCounts[key] >= 35u) {
+						submit({callerId = key, problem = "A"}, checkA);
+					}
+				}
+			}
+		}
+
+		//A function to check whether any tuple falls into the 'B' problem category
+		stream <rstring callerId, rstring problem> checkB = Custom(bothTowers) {
+			logic state:
+				mutable map<rstring, set<rstring>> callerToUnique = {};
+
+			onTuple bothTowers : {
+				//When we get a tuple, check to see if it's in the map and if it isn't, make a new set to add to the map, otherwise add the new callee to the map
+				if (!(bothTowers.callerId in callerToUnique)) {
+					mutable set<rstring> uniques = {bothTowers.calleeId};
+					insertM(uniques, callerId);
+				} else {
+					mutable set<rstring> uniques = callerToUnique[bothTowers.callerId];
+					insertM(uniques, bothTowers.calleeId);
+					callerToUnique[bothTowers.callerId] = uniques;
+				}
+			}
+
+			onPunct bothTowers : {
+				for (rstring key in callerToUnique) {
+					if (size(callerToUnique[key]) >= 30) {
+						submit({callerId = key, problem = "B"}, checkB);
+					}
+				}
+			}	
+		}
+
+		//A function to check whether any tuple falls into the 'C' problem category
+		stream <rstring callerId, rstring problem> checkC = Custom(bothTowers) {
+			logic state :
+				mutable map<rstring, map<rstring, uint32>> callerToHourToCount = {};
+
+			onTuple bothTowers : {
+				list<rstring> time = tokenize(bothTowers.timeStamp, ":", false);
+				rstring hour = time[0];
+				if (bothTowers.duration <= 10u){
+					if (!(bothTowers.callerId in callerToHourToCount)) {
+						mutable map<rstring, uint32> hourToCount = {};
+						insertM(hourToCount, hour, 1u);
+						insertM(callerToHourToCount, bothTowers.callerId, hourToCount);
+					} else {
+						mutable map<rstring, uint32> hourToCount = callerToHourToCount[bothTowers.callerId];
+						if (!(hour in hourToCount)) {
+							insertM(hourToCount, hour, 1u);
+						} else {
+							hourToCount[hour] = hourToCount[hour] + 1u;
+						}
+						callerToHourToCount[bothTowers.callerId] = hourToCount;
+					}
+				}
+			}
+
+			onPunct bothTowers : {
+				for (rstring key in callerToHourToCount) {
+					map<rstring, uint32> hours = callerToHourToCount[key];
+					for (rstring hour in hours) {
+						if (hours[hour] >= 10u) {
+							submit({callerId = key, problem = "C"}, checkC);
+						}
+					}
+				}
+			}	
+		}
+
+		//A function to take out duplicates
+		stream<rstring callerId, rstring problem> Output = Custom(checkA; checkB; checkC) {
+			logic state:
+				mutable set<rstring> callers = {};
+
+			onTuple checkA : {
+				if (!(checkA.callerId in callers)) {
+					insertM(callers, checkA.callerId);
+					submit({callerId = checkA.callerId, problem = checkA.problem}, Output);
+				}
+			}
+
+			onTuple checkB : {
+				if (!(checkB.callerId in callers)) {
+					insertM(callers, checkB.callerId);
+					submit({callerId = checkB.callerId, problem = checkB.problem}, Output);
+				}
+			}
+
+			onTuple checkC : {
+				if (!(checkC.callerId in callers)) {
+					insertM(callers, checkC.callerId);
+					submit({callerId = checkC.callerId, problem = checkC.problem}, Output);
+				}
+			}
+		}
+
+		() as Sink = FileSink(Output) {
+			param 
+				format : csv;
+				file : "suspects.csv";
+		}
+}

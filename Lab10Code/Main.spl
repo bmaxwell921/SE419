@@ -1,0 +1,42 @@
+use my.op::DeSimilarDocs;
+use spl.file::*;
+
+composite Main {
+	graph
+		stream<rstring timeStamp, rstring filePath> Input = FileSource() {
+			param
+				format: csv;
+				file : "/datasets/Lab10/Filenames.csv";
+		}
+
+		//Read all the documents here
+		stream<rstring timeStamp, rstring filePath, rstring document> Docs = Custom(Input) {
+			logic
+
+				onTuple Input : {
+					rstring realFilePath = "/datasets/Lab10/Documents/" + Input.filePath;
+					mutable int32 err = 0;
+					mutable uint64 fp = fopen(realFilePath, "read", err);
+					mutable rstring contents = "";
+					while (!feof(fp)) {
+						contents = contents + freadLine(fp, err);
+					}
+
+					submit({timeStamp = Input.timeStamp, filePath = Input.filePath, document = contents}, Docs);
+
+					fclose(fp, err);
+				}
+		}
+
+		//Do stuff with them
+		stream<rstring timeStamp, rstring repDocPath> Output = DeSimilarDocs(Docs) {
+			param
+				WindowSize : 60;
+		}
+
+		() as Writer = FileSink(Output) {
+			param
+				format : csv; 
+				file : "output.csv";
+		}
+}
