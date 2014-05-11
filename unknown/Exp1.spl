@@ -1,0 +1,52 @@
+composite Exp1 { 												
+	graph 																
+		stream<rstring contents> Lines = FileSource() { 				
+			param format : line; 										
+			file : "/datasets/big.txt";//getSubmissionTimeValue("file"); 						
+		} 																
+		stream<rstring contents> Numbered = Functor(Lines) { 			
+			logic state : { mutable int32 i = 0; } 						
+			onTuple Lines : { i++; } 									
+			output Numbered : contents = (rstring)i + " " + contents; 
+		} 																
+		() as LineCount = FileSink(Numbered) { 								
+			param file : "bigresults.txt"; 								
+			format : line; 												
+		}
+		//() as WordCount = Custom(Lines) {
+		stream<rstring history, rstring adventure> Output = Custom(Lines) {
+			logic state : {
+				mutable uint32 numHistory = 0u;
+				mutable uint32 numAdventure = 0u;
+			}
+
+			onTuple Lines : {
+				list<rstring> tokens = tokenize(Lines.contents, " ", false);
+				for (rstring x in tokens) {
+					if (x == "history"r) {
+						++numHistory;
+					}
+					if (x == "adventure"r) {
+						++numAdventure;
+					}
+				}
+			}
+
+			onPunct Lines : {
+				if (currentPunct() == Sys.FinalMarker) {
+					//printStringLn("History found: " + (rstring)numHistory + " times.");
+					//printStringLn("Adventure found: " + (rstring)numAdventure + "  times.");
+					submit({history = "History found: " + (rstring)numHistory + " times.", adventure = "Adventure found: " + (rstring)numAdventure + " times."}, Output);
+					//submit({adventure = "Adventure found: " + (rstring)numAdventure + " times."}, Output);
+				}
+			}
+
+			//output file : "count.txt";
+			//format : line;
+		}
+
+		() as WordCount = FileSink(Output) {
+			param file : "count.txt";
+			//format : line;
+		}																
+}																		
